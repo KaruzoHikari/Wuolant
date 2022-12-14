@@ -14,11 +14,13 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using iText.IO.Image;
+using iText.Kernel.Geom;
 using iText.Kernel.Pdf;
 using iText.Kernel.Pdf.Canvas.Parser;
 using iText.Kernel.Pdf.Canvas.Parser.Listener;
 using iText.Layout;
 using Image = iText.Layout.Element.Image;
+using Path = System.IO.Path;
 
 namespace Wuolant
 {
@@ -43,12 +45,12 @@ namespace Wuolant
             AttachToParentConsole();
         }
 
-        public void ProcessPDF(string readPath)
+        public bool ProcessPDF(string readPath)
         {
             // First it checks whether this actually comes from Wuolah (in case you're re-dragging an already adblocked file)
             if (!IsWuolahFile(readPath))
             {
-                return;
+                return false;
             }
             
             // Now it creates a temp path to store the pdf images
@@ -57,11 +59,15 @@ namespace Wuolant
             Console.WriteLine($"Created temp path at {randomPath}!");
             
             // Then it retrieves them and creates a clean PDF with them
-            ExportImages(readPath, randomPath);
-            CreateCleanPdf(readPath, randomPath);
+            bool isValidPdf = ExportImages(readPath, randomPath);
+            if (isValidPdf)
+            {
+                CreateCleanPdf(readPath, randomPath);
+            }
             
             // Finally it deletes the temp path
             Directory.Delete(randomPath, true);
+            return isValidPdf;
         }
 
         private bool IsWuolahFile(string path)
@@ -77,7 +83,7 @@ namespace Wuolant
             }
         }
 
-        private void ExportImages(string readPath, string extractionPath)
+        private bool ExportImages(string readPath, string extractionPath)
         {
             using (PdfReader reader = new PdfReader(readPath))
             {
@@ -91,11 +97,20 @@ namespace Wuolant
                     // Then we let iText render the document so we can snatch and save the image if it's valid
                     for (var i = 1; i <= pdfDocument.GetNumberOfPages(); i++)
                     {
-                        strategy.SetIndirectReferences(GetImageReferences(pdfDocument.GetPage(i)));
+                        Console.WriteLine($"Processing page {i}");
+                        List<int> references = GetImageReferences(pdfDocument.GetPage(i));
+                        if (references == null)
+                        {
+                            // Something is wrong in the reference extraction. We won't handle this PDF
+                            return false;
+                        }
+                        strategy.SetIndirectReferences(references);
                         parser.ProcessPageContent(pdfDocument.GetPage(i));
                     }
                 }
             }
+
+            return true;
         }
 
         private List<int> GetImageReferences(PdfPage pdfPage)
@@ -118,12 +133,32 @@ namespace Wuolant
                 // And now we find the inner image ID
                 // We're searching for this: /XObject <</R8 51 0 R >>
                 string imageData = pdfPage.GetDocument().GetPdfObject(objectId).ToString();
-                List<string> rawImageReferences = ExtractFromString(imageData, @"/XObject <</", " 0 R >>");
+                List<string> rawImageReferences = ExtractFromString(imageData, @"/XObject <</", ">>");
+                if (rawImageReferences.Count == 0)
+                {
+                    // This page has an empty embedded object. Let's skip the PDF
+                    return null;
+                }
                 
-                // In theory there's only 1, so let's handle it manually (if there's not 1, the exception should get thrown anyway)
-                // todo lol apparently some documents have MORE than 1? recheck that
-                int finalId = int.Parse(rawImageReferences[0].Split(" ")[1]);
-                imageReferences.Add(finalId);
+                string rawImageReference = rawImageReferences[0];
+                string[] tempReferenceArray = rawImageReference.Split(" 0 R ");
+                
+                // TODO PDFs that have more than 2 elements in the reference array are likely to not render properly in the clean PDF
+                // So, for now, we don't allow them
+                if (tempReferenceArray.Length > 2)
+                {
+                    return null;
+                }
+                
+                foreach (string temp in tempReferenceArray)
+                {
+                    if (!string.IsNullOrEmpty(temp))
+                    {
+                        // We want to pick the last number that appears before 0 R
+                        string[] tempSplitArray = temp.Split(" ");
+                        imageReferences.Add(int.Parse(tempSplitArray[tempSplitArray.Length-1]));
+                    }
+                }
             }
             
             return imageReferences;
@@ -177,7 +212,7 @@ namespace Wuolant
                 {
                     img.SetRotationAngle(-Math.PI/2);
                 }
-                
+
                 // And finally add it
                 Console.WriteLine($"Adding image from {path.FullName}!");
                 document.Add(img);

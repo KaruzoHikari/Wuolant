@@ -33,19 +33,33 @@ namespace Wuolant
                 {
                     // We iterate the paths of all the dropped files
                     string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
-                    int count = 0;
+                    int countValid = 0;
+                    int countInvalid = 0;
                     if (files != null)
                     {
                         foreach (string path in files)
                         {
-                            count++;
                             Console.WriteLine($"Received {path}!");
                             // We send it to the application so it processes it
-                            ((App)Application.Current).ProcessPDF(path);
+                            bool validPdf = ((App)Application.Current).ProcessPDF(path);
+                            if (validPdf)
+                            {
+                                countValid++;
+                            }
+                            else
+                            {
+                                countInvalid++;
+                            }
                         }
                     }
 
-                    MessageBox.Show($"Finished processing {count} files!\nGood luck!");
+                    string text = $"Finished cleaning {countValid} files!";
+                    if (countInvalid > 0)
+                    {
+                        text += $"\nThere were {countInvalid} files that couldn't be processed.";
+                    }
+                    text += "\nGood luck!";
+                    MessageBox.Show(text);
                 }
             }
             catch (Exception ex)
