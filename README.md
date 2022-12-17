@@ -8,3 +8,4 @@ Just drag and drop your Wuolah files into the program, and they'll instantly be 
 <img src="https://user-images.githubusercontent.com/35693714/208251643-906b238b-358e-4ddc-8405-0e7b42d5a1b9.png" width="600"><br>
 
 A new folder called "Wuolan't" will be automatically created, where your ad-less PDFs will be placed. Enjoy!<br>
+# [-> Download from here <-](https://github.com/KaruzoHikari/Wuolan-t/releases/latest)
