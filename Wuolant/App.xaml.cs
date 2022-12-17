@@ -33,9 +33,22 @@ namespace Wuolant
         }
         
         // Beginning of the program
-        private void Start(object sender, StartupEventArgs e)
+        protected override void OnStartup(StartupEventArgs e)
         {
+            base.OnStartup(e);
             AttachToParentConsole();
+
+            string[] args = e.Args;
+            if (args.Length > 0)
+            {
+                // CLI mode
+                HandleCLI(args);
+            }
+            else
+            {
+                // GUI mode
+                new MainWindow().ShowDialog();
+            }
         }
 
         public bool ProcessPDF(string readPath, bool isA4)
@@ -140,7 +153,7 @@ namespace Wuolant
             // Closing the reader and writer
             writerPdf.Close();
             originalPdf.Close();
-            Console.WriteLine("Finished cleaning PDF!");
+            Console.WriteLine("Cleaned PDF!");
         }
         
         private string GetOutputPath(string originalPath)
@@ -160,6 +173,47 @@ namespace Wuolant
             }
 
             return cleanPath;
+        }
+        
+        private void HandleCLI(string[] args)
+        {
+            // Usage: wuolant.exe [page size: original/A4] [list of paths...]
+            // First we check if the 1st argument indicates the page size. Otherwise it defaults to original size
+            Console.WriteLine("\n\n========================\n  Welcome to Wuolan't!\n========================\n");
+            bool isA4 = false;
+            int initialPathIndex = 0;
+            switch (args[0].ToLowerInvariant())
+            {
+                case "original": case "og":
+                {
+                    isA4 = true;
+                    initialPathIndex++;
+                    break;
+                }
+                case "a4":
+                {
+                    isA4 = false;
+                    initialPathIndex++;
+                    break;
+                }
+            }
+            
+            // Now we process each path provided to the app.
+            // If the page hasn't been specified, it starts at index 0. Otherwise, at index 1
+            if (initialPathIndex < args.Length)
+            {
+                for (int i = initialPathIndex; i < args.Length; i++)
+                {
+                    ProcessPDF(args[i], isA4);
+                }
+                Console.WriteLine($"\nFinished processing {args.Length - initialPathIndex} files!");
+            }
+            else
+            {
+                Console.WriteLine("You haven't provided any PDF path!\nThe usage is: wuolant.exe [page size: original/A4] [list of paths...]");
+            }
+            
+            Shutdown();
         }
     }
 }
