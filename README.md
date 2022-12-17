@@ -22,4 +22,4 @@ If you skip the page size, it'll default to original page size.
 
 ### Examples:
 - `wuolant.exe original "C:\Users\Admin\Documents\test.pdf"`<br>
-- `wuolant.exe a4 "C:\Users\Admin\Documents\mypdf1.pdf" "C:\Users\Admin\Documents\mypdf2.pdf" "C:\Users\Admin\Documents\mypdf3.pdf"`
+- `wuolant.exe a4 "C:\Users\Admin\Documents\mypdf1.pdf" "C:\Users\Admin\Documents\mypdf2.pdf"`
