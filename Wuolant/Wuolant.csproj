@@ -3,8 +3,11 @@
     <PropertyGroup>
         <OutputType>WinExe</OutputType>
         <TargetFramework>net7.0-windows</TargetFramework>
-        <RootNamespace>Wuolah_dBlock</RootNamespace>
+        <RootNamespace>Wuolant</RootNamespace>
         <UseWPF>true</UseWPF>
+        <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+        <PublishSingleFile>true</PublishSingleFile>
+        <SelfContained>false</SelfContained>
     </PropertyGroup>
 
     <ItemGroup>

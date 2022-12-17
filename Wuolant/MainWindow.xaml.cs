@@ -20,9 +20,15 @@ namespace Wuolant
     /// </summary>
     public partial class MainWindow : Window
     {
+        private bool isA4;
         public MainWindow()
         {
             InitializeComponent();
+        }
+        
+        private void SizeToggleClicked(object sender, RoutedEventArgs e)
+        {
+            isA4 = SizeToggle.IsChecked == true;
         }
 
         public void FileDrop(object sender, DragEventArgs e)
@@ -34,26 +40,22 @@ namespace Wuolant
                     // We iterate the paths of all the dropped files
                     string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
                     int countValid = 0;
-                    int countInvalid = 0;
                     if (files != null)
                     {
                         foreach (string path in files)
                         {
-                            Console.WriteLine($"Received {path}!");
+                            Console.WriteLine($"Received {path}");
                             // We send it to the application so it processes it
-                            bool validPdf = ((App)Application.Current).ProcessPDF(path);
+                            bool validPdf = ((App)Application.Current).ProcessPDF(path, isA4);
                             if (validPdf)
                             {
                                 countValid++;
-                            }
-                            else
-                            {
-                                countInvalid++;
                             }
                         }
                     }
 
                     string text = $"Finished cleaning {countValid} files!";
+                    int countInvalid = files != null ? files.Length - countValid : 0;
                     if (countInvalid > 0)
                     {
                         text += $"\nThere were {countInvalid} files that couldn't be processed.";

@@ -1,23 +1,16 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Configuration;
-using System.Data;
-using System.Diagnostics;
-using System.Drawing;
-using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using iText.IO.Image;
 using iText.Kernel.Geom;
 using iText.Kernel.Pdf;
+using iText.Kernel.Pdf.Canvas;
 using iText.Kernel.Pdf.Canvas.Parser;
-using iText.Kernel.Pdf.Canvas.Parser.Listener;
+using iText.Kernel.Pdf.Xobject;
 using iText.Layout;
 using Image = iText.Layout.Element.Image;
 using Path = System.IO.Path;
@@ -45,141 +38,115 @@ namespace Wuolant
             AttachToParentConsole();
         }
 
-        public bool ProcessPDF(string readPath)
+        public bool ProcessPDF(string readPath, bool isA4)
         {
             // First it checks whether this actually comes from Wuolah (in case you're re-dragging an already adblocked file)
             if (!IsWuolahFile(readPath))
             {
+                Console.WriteLine("File isn't a valid Wuolah PDF.");
                 return false;
             }
             
-            // Now it creates a temp path to store the pdf images
-            string randomPath = Path.GetTempPath() + Guid.NewGuid();
-            Directory.CreateDirectory(randomPath);
-            Console.WriteLine($"Created temp path at {randomPath}!");
-            
-            // Then it retrieves them and creates a clean PDF with them
-            bool isValidPdf = ExportImages(readPath, randomPath);
-            if (isValidPdf)
-            {
-                CreateCleanPdf(readPath, randomPath);
-            }
-            
-            // Finally it deletes the temp path
-            Directory.Delete(randomPath, true);
-            return isValidPdf;
-        }
-
-        private bool IsWuolahFile(string path)
-        {
-            // A little hacky, we just check whether pdf-lib created the file (our files aren't pdf-lib)
-            using (PdfReader reader = new PdfReader(path))
-            {
-                using (PdfDocument pdfDocument = new PdfDocument(reader))
-                {
-                    PdfDocumentInfo info = pdfDocument.GetDocumentInfo();
-                    return info.GetCreator() != null && info.GetCreator().StartsWith("pdf-lib");
-                }
-            }
-        }
-
-        private bool ExportImages(string readPath, string extractionPath)
-        {
-            using (PdfReader reader = new PdfReader(readPath))
-            {
-                using (PdfDocument pdfDocument = new PdfDocument(reader))
-                {
-                    ImageRenderListener strategy = new ImageRenderListener(extractionPath + Path.DirectorySeparatorChar + @"ExtractedImage-{0}.{1}");
-                    PdfCanvasProcessor parser = new PdfCanvasProcessor(strategy);
-
-                    // We iterate the PDF page by page
-                    // Our first step is gonna be obtaining the IDs for the non-ad images
-                    // Then we let iText render the document so we can snatch and save the image if it's valid
-                    for (var i = 1; i <= pdfDocument.GetNumberOfPages(); i++)
-                    {
-                        Console.WriteLine($"Processing page {i}");
-                        List<int> references = GetImageReferences(pdfDocument.GetPage(i));
-                        if (references == null)
-                        {
-                            // Something is wrong in the reference extraction. We won't handle this PDF
-                            return false;
-                        }
-                        strategy.SetIndirectReferences(references);
-                        parser.ProcessPageContent(pdfDocument.GetPage(i));
-                    }
-                }
-            }
-
+            // Then it creates the clean PDF
+            CreateCleanPdf(readPath, isA4);
             return true;
         }
-
-        private List<int> GetImageReferences(PdfPage pdfPage)
+        
+        private bool IsWuolahFile(string path)
         {
-            // We're gonna do it the raw way i'm so tired
-            // All the image objects contain an ID called indirect reference ID
-            // If we iterate from the top, we can know which IDs belong to the embedded pdf pages (it literally says so)
-            // The external objects are like this: <</EmbeddedPdfPage-2708199956 26 0 R /Image-6703682664 24 0 R /Image-7888911063 25 0 R /Image-979344929 23 0 R >>
-            // So once we have one of these, we search its *inner* Image object, and store its indirect reference ID
-            
-            // First we find all external embedded pdf objects
-            string externalData = pdfPage.GetPdfObject().ToString();
-            List<string> rawExternalReferences = ExtractFromString(externalData, @"/EmbeddedPdfPage-", " 0 R");
-            List<int> imageReferences = new List<int>();
-            foreach (string reference in rawExternalReferences)
+            // First we check if it's actually a PDF
+            if (!path.EndsWith(".pdf"))
             {
-                // We obtain its ID
-                int objectId = int.Parse(reference.Split(" ")[1]);
+                return false;
+            }
+            
+            try
+            {
+                // Now's a little hacky, we just check whether pdf-lib created the file (our files aren't pdf-lib)
+                PdfReader reader = new PdfReader(path);
+                PdfDocument pdfDocument = new PdfDocument(reader);
+
+                PdfDocumentInfo info = pdfDocument.GetDocumentInfo();
+                bool isWuolah = info.GetCreator() != null && info.GetCreator().StartsWith("pdf-lib");
+                pdfDocument.Close();
+                reader.Close();
+                return isWuolah;
+            }
+            catch (Exception ignored)
+            {
+                // The PDF isn't valid, so we skip it
+                return false;
+            }
+        }
+
+        private void CreateCleanPdf(string readPath, bool isA4)
+        {
+            // It creates a clean path to export the new PDF
+            // It'll be inside a folder called "Wuolan't", in the same directory as the original file
+            string cleanPath = GetOutputPath(readPath);
+            Console.WriteLine($"Writing to {cleanPath}");
+            
+            // We read the original file
+            PdfReader reader = new PdfReader(readPath);
+            reader.SetUnethicalReading(true);
+            PdfDocument originalPdf = new PdfDocument(reader);
+            
+            // And we create a writer for the new PDF
+            PdfWriter writer = new PdfWriter(cleanPath);
+            PdfDocument writerPdf = new PdfDocument(writer);
+            Document writerDocument = new Document(writerPdf);
+            
+            // Now we iterate page by page to find the embedded PDFs 
+            int currentCleanPage = 0;
+            for (var i = 1; i <= originalPdf.GetNumberOfPages(); i++)
+            {
+                // Each page will have a Resources object, where the different page objects will be embedded
+                PdfPage page = originalPdf.GetPage(i);
+                PdfDictionary pageDict = page.GetPdfObject();
+                PdfDictionary resources = pageDict.GetAsDictionary(PdfName.Resources);
+                PdfDictionary xObjects = resources.GetAsDictionary(PdfName.XObject);
                 
-                // And now we find the inner image ID
-                // We're searching for this: /XObject <</R8 51 0 R >>
-                string imageData = pdfPage.GetDocument().GetPdfObject(objectId).ToString();
-                List<string> rawImageReferences = ExtractFromString(imageData, @"/XObject <</", ">>");
-                if (rawImageReferences.Count == 0)
+                // We iterate the XObjects inside the Resources instance, that's where the original PDFs are stored (as an X-Form)
+                // We're searching for names like "/EmbeddedPdfPage-2708199956"
+                foreach (PdfName name in xObjects.KeySet())
                 {
-                    // This page has an empty embedded object. Let's skip the PDF
-                    return null;
-                }
-                
-                string rawImageReference = rawImageReferences[0];
-                string[] tempReferenceArray = rawImageReference.Split(" 0 R ");
-                
-                // TODO PDFs that have more than 2 elements in the reference array are likely to not render properly in the clean PDF
-                // So, for now, we don't allow them
-                if (tempReferenceArray.Length > 2)
-                {
-                    return null;
-                }
-                
-                foreach (string temp in tempReferenceArray)
-                {
-                    if (!string.IsNullOrEmpty(temp))
+                    if (name.GetValue().StartsWith("EmbeddedPdfPage"))
                     {
-                        // We want to pick the last number that appears before 0 R
-                        string[] tempSplitArray = temp.Split(" ");
-                        imageReferences.Add(int.Parse(tempSplitArray[tempSplitArray.Length-1]));
+                        // Found the proper xObject. We load it in a wrapper object.
+                        PdfObject ogObject = xObjects.GetAsStream(name).CopyTo(writerPdf);
+                        PdfStream pdfObject = ogObject as PdfStream;
+                        PdfFormXObject form = new PdfFormXObject(pdfObject);
+
+                        // Now we create an image based on the X-Form, which we'll save in the new PDF
+                        Image image = new Image(form);
+                        
+                        // We create the new page for the image. It'll be either the original image size, or A4
+                        // If it's A4, we don't need to make it fit the page. Adding the image to the doc already handles that
+                        // Otherwise, we need to make each page the size of the image
+                        if (!isA4)
+                        {
+                            PageSize newPageSize = new PageSize(image.GetImageWidth(), image.GetImageHeight());
+                            writerPdf.AddNewPage(newPageSize);
+                            image.SetFixedPosition(++currentCleanPage, 0, 0);
+                            image.ScaleToFit(newPageSize.GetWidth(), newPageSize.GetHeight());   
+                        }
+                        
+                        // And we finally add it to the doc
+                        writerDocument.Add(image);
                     }
                 }
             }
-            
-            return imageReferences;
+
+            // Closing the reader and writer
+            writerPdf.Close();
+            originalPdf.Close();
+            Console.WriteLine("Finished cleaning PDF!");
         }
         
-        private List<string> ExtractFromString(string source, string start, string end)
+        private string GetOutputPath(string originalPath)
         {
-            // Here we'll extract all the strings that exist between X and Y
-            var results = new List<string>();
-            string pattern = string.Format("{0}({1}){2}", Regex.Escape(start), ".+?", Regex.Escape(end));
-            foreach (Match m in Regex.Matches(source, pattern))
-            {
-                results.Add(m.Groups[1].Value);
-            }
-            return results;
-        }
-
-        private void CreateCleanPdf(string originalPath, string imagesPath)
-        {
-            // We write the file in a new output folder.
-            // If the file exists, we overwrite it.
+            // The output path will be a new folder called "Wuolan't" in the same directory
+            // In there, a file with the same name will be created (or overwritten!)
             string newDirectory = Path.GetDirectoryName(originalPath) + Path.DirectorySeparatorChar + "Wuolan't";
             string fileName = Path.GetFileName(originalPath);
             string cleanPath = newDirectory + Path.DirectorySeparatorChar + fileName;
@@ -191,37 +158,8 @@ namespace Wuolant
             {
                 File.Delete(cleanPath);
             }
-            
-            PdfWriter writer = new PdfWriter(cleanPath);
-            PdfDocument pdfDoc = new PdfDocument(writer);
-            Document document = new Document(pdfDoc);
 
-            // We obtain the images by creation date (so we get the ones that were processed first)
-            DirectoryInfo di = new DirectoryInfo(imagesPath);
-            FileSystemInfo[] files = di.GetFileSystemInfos();
-            var orderedFiles = files.OrderBy(f => f.CreationTime);
-            
-            // Now we interate them
-            foreach (FileSystemInfo path in orderedFiles)
-            {
-                ImageData data = ImageDataFactory.Create(path.FullName);
-
-                // Rotate the horizontal documents to vertical (and hopefully this will work lol)
-                Image img = new Image(data);
-                if (data.GetWidth() > data.GetHeight())
-                {
-                    img.SetRotationAngle(-Math.PI/2);
-                }
-
-                // And finally add it
-                Console.WriteLine($"Adding image from {path.FullName}!");
-                document.Add(img);
-            }
-
-            // Closing the objects
-            document.Close(); 
-            pdfDoc.Close();
-            writer.Close();
+            return cleanPath;
         }
     }
 }

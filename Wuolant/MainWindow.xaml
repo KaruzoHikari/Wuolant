@@ -30,5 +30,31 @@
                 <Rectangle Width="760" Height="410" Fill="Transparent" Margin="20 20 20 20"></Rectangle>
             </Canvas>
         </StackPanel>
+        
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="50">
+            <TextBlock Text="Original" FontSize="25" FontWeight="Bold" HorizontalAlignment="Center"
+                       VerticalAlignment="Center" Margin="0 0 10 0"></TextBlock>
+            <ToggleButton x:Name="SizeToggle" Height="40" Width="80" Click="SizeToggleClicked">
+                <ToggleButton.Template>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Background" Background="LightGreen" CornerRadius="20" Padding="1">
+                            <Border x:Name="ToggleCircle" Background="White"
+                                    Width="{TemplateBinding Height}"
+                                    CornerRadius="20" HorizontalAlignment="Left">
+                                <ContentPresenter/>
+                            </Border>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="ToggleCircle" Property="HorizontalAlignment" Value="Right"/>
+                                <Setter TargetName="Background" Property="Background" Value="LightSalmon"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </ToggleButton.Template>
+            </ToggleButton>
+            <TextBlock Text="A4" FontSize="25" FontWeight="Bold" HorizontalAlignment="Center"
+                       VerticalAlignment="Center" Margin="10 0 0 0"></TextBlock>
+        </StackPanel>
     </Grid>
 </Window>
